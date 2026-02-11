@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Management</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <script src="https://cdn.plot.ly/plotly-3.0.0.min.js" charset="utf-8"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+
+    <style>
+        :root{
+            --card-width: 250px;
+            --card-height: 300px;
+        }
+
+        nav{
+            padding-top: 1rem;
+            padding-left: 1rem;
+            border-bottom: 1px solid black;
+            padding-bottom: 1rem;
+            background-color: #fff;
+        }
+
+        .card-grid{
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, var(--card-width));
+            grid-auto-rows: 1fr;
+            gap: 10px;
+        }
+
+        .sim-card{
+            background-color: #fff;
+            height: var(--card-height);
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+        }
+
+        .stat-card{
+            background-color: #fff;
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+        }
+
+        .new-card{
+            height: var(--card-height);
+            background-color: #fff;
+            border: 4px solid #ccc;
+            border-style: dashed;
+        }
+
+        .add-new-card{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        section{
+            margin-bottom: 1.5rem;
+        }
+
+        body{
+            background-color: #eee;
+        }
+
+        .alert-container{
+            position: fixed;
+            left: 0;
+            top: 0px;
+            z-index: 10000;
+        }
+
+        .alert-container p{
+            margin: 0;
+            transition: all 1s cubic-bezier(0,.8,0,.8);
+            transition: all 1s cubic-bezier(0,.8,0,.8) allow-discrete;
+            opacity: 0;
+            scale: 0;
+            display: none;
+            z-index: 10000;
+        }
+
+        .show-alert p{
+            display: block !important;
+            opacity: 1 !important;
+            scale: 1 !important;
+            transition: all 0s;
+        }
+    </style>
+
+    <script>
+        function generateRandomHex() {
+            let randomNumber = Math.floor(Math.random() * 16777215); 
+
+            return "" + randomNumber.toString(16).padStart(6, '0'); 
+        }
+
+        function popup(){
+            const id = generateRandomHex()
+
+            document.getElementById('addcardmodal').setAttribute('onclick',`create_new_sim()`)
+            modalElement = document.getElementById('modal');
+            const modal = new bootstrap.Modal(modalElement); 
+            modal.show(); 
+        };
+
+        function show_alert(){
+        }
+
+        function create_new_sim(){
+            const name = document.getElementById('sim-name').value;
+            const tps = document.getElementById('tps').value;
+            const nm = document.getElementById('nm').value;
+            const type = document.getElementById('machine-select').value;
+
+            document.querySelector("#loading-container").classList.add("show-alert");
+            document.querySelector("#total-devices").innerText = nm;
+
+            
+            fetch(`/new_simulation`, {
+                method: 'POST',
+                body: JSON.stringify({name, tps, nm, type}),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data)
+                const id = data['id'];
+                window.location.href = `/simulations/${id}`
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('graphContainer').innerHTML = error;
+            });
+        }
+
+        function get_sims(){
+            fetch(`/get_simulations`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data)
+                
+                let container;
+                let sim_parameters = ''
+                Array.from(data).forEach(sim => {
+                    console.log(sim[1].replaceAll(`'`, `"`))
+                    json_string = JSON.stringify(sim[1].replaceAll(`'`, `"`))
+                    sim_parameters = JSON.parse(JSON.parse(json_string))//.slice(1, json_string.length-1))
+
+                    console.log(sim_parameters)
+
+
+
+                    if (sim[2] == 'ACTIVE'){
+                        container = document.querySelector(`#card-grid-active`)
+                    }else{
+                        container = document.querySelector(`#card-grid-stopped`)
+                    }
+
+                    container.innerHTML = `
+                    <a href="/simulations/${sim[0]}" class="text-decoration-none text-black">
+                        <div class="sim-card p-2" style="cursor: pointer;" id='${sim[0]}'>
+                            <p class="h4 fw-bold">Name: ${sim_parameters.name}</p>
+
+                            <span>Configuration:</span>
+                            <ul>
+                                <li>Number of machines: ${sim_parameters.nm}</li>
+                                <li>Seconds between transactions: ${sim_parameters.tps}</li>
+                                <li>Machine: ${sim_parameters.type}</li>
+                            </ul>
+                        </div>
+                    </a>
+                    ${container.innerHTML}`
+                })
+                
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('graphContainer').innerHTML = error;
+            });
+        }
+
+        get_sims();
+    </script>
+</head>
+<body>
+    <nav class="w-100">
+        <div class="container">
+            <a href="/"><img src="https://genfare.atlassian.net/wiki/download/attachments/524289/atl.site.logo?version=2&modificationDate=1445562795035&cacheVersion=1&api=v2" alt="">
+            </a>
+        </div>
+    </nav>
+    <div class="container">
+
+        <div class="modal fade" id="modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="true" >
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h1 class="modal-title fs-5" id="modal-title"></h1>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <div class="d-flex flex-row justify-content-between align-items-baseline">
+                        <h3 class="h5 mb-5">Add new simulation:</h3>
+                        <small id="sim-id"></small>
+                    </div>
+                    
+                    <div class="d-flex align-items-baseline">
+                        <p class="flex-grow-1 text-nowrap me-3">Simulation name</p>
+                        <input class="form-control" type="text" id="sim-name"/>
+                    </div>
+
+                    <div class="d-flex align-items-baseline">
+                        <p class="flex-grow-1 text-nowrap me-3">Number of machines</p>
+                        <input class="form-control" type="text" id="nm"/>
+                    </div>
+
+                    <div class="d-flex align-items-baseline">
+                        <p class="flex-grow-1 text-nowrap me-3">Type of machine</p>
+                        <select class="form-select " style="flex-shrink: 2 !important;" name="machine-select" id="machine-select">
+                            <option value="FF25">FastFare25</option>
+                            <option value="TVM">TVM</option>
+                        </select>
+                    </div>
+
+                    <div class="d-flex align-items-baseline">
+                        <p class="flex-grow-1 text-nowrap me-3">Seconds between transactions</p>
+                        <input class="form-control" type="text" id="tps"/>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                  <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="add_card()" id="addcardmodal">Save</button>
+                </div>
+              </div>
+            </div>
+        </div>
+        
+        
+        <section>
+            <h1 class="text-center fw-bold mt-0 mt-lg-3">Simulation management</h1>
+        
+            <h3 class="fw-bold">Current simulations:</h3>
+            <div class="card-grid" id="card-grid-active">
+                
+
+                <div class="new-card d-flex flex-row justify-content-center" style="cursor: pointer;" onclick="popup()">
+                    <div class="d-flex flex-column justify-content-center">
+                        <p class="display-1 fw-bold m-0 text-center" style="color:#888">+</p>
+                        <p class="" style="color:#666">Run new simulation</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert-container w-100 d-flex flex-row justify-content-center" id="loading-container">
+            <p class="alert alert-secondary">
+                <span class="fw-bold">Launching simulation...</span> <span id="machine-start-counter"></span>/<span id="total-devices"></span> devices launched
+
+            </p>
+        </div>
+
+        <section>
+            <h3 class="fw-bold">Past simulations:</h3>
+            <div class="card-grid" id="card-grid-stopped">
+                
+            </div>
+        </section>
+
+        
+    </div>
+    <script>
+        const socket = io('localhost:4321', {auth: 'frontend'});
+
+        socket.on('connect', () => {
+            console.log('Connected to server with ID:', socket.id);
+        });
+
+        socket.on('start_counter', (data) => {
+            document.querySelector('#machine-start-counter').innerText = data.counter
+        });
+    </script>
+</body>
+</html>
