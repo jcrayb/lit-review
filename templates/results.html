@@ -114,44 +114,79 @@
             modal.show(); 
         };
 
-        function show_alert(){
+        var path = window.location.pathname;
+        var hex_code = path.split("/").pop();
+        console.log( hex_code );
+
+        function add_data_to_DOM(data, results_div){
+                master_div = document.createElement('div')
+                master_div.setAttribute("class", 'w-100 mt-3')
+
+                title_link = document.createElement('a')
+                title_link.setAttribute("class", "text-black text-decoration-none m-0")
+                title_link.setAttribute('href', data[7])
+
+                title_title = document.createElement('h4')
+                title_title.setAttribute("class", "fw-bold d-flex flex-row justify-content-between")
+
+                title_content = document.createElement('span')
+                title_content.innerText = data[1]
+
+                title_score = document.createElement('span')
+                title_score.innerText = data[6]
+
+                authors = document.createElement('p')
+                authors.classList.add('m-0')
+                authors.innerText = data[3]
+
+                year_journal = document.createElement('p')
+                year_journal.classList.add('m-0')
+
+                year_journal.innerText = `${data[2]}, ${data[4]}`
+
+                title_title.appendChild(title_content)
+                title_title.appendChild(title_score)
+
+                title_link.appendChild(title_title)
+
+                master_div.appendChild(title_link)
+                master_div.appendChild(authors)
+                master_div.appendChild(year_journal)
+                
+                category = data[5]
+
+                category_id = category.replace(/\s+/g, '');
+
+                console.log(!document.getElementById(category_id))
+
+                if (!document.getElementById(category_id)){
+                    category_div = document.createElement('div')
+                    category_div.setAttribute('id', category_id)
+                    category_div.setAttribute('class', 'mb-4')
+
+                    category_title = document.createElement('h2')
+                    category_title.setAttribute('class', 'fw-bold text-decoration-underline')
+                    category_title.innerText = data[5]
+                    
+                    category_div.appendChild(category_title)
+                    
+                    console.log(category_div)  
+
+                    results_div.appendChild(category_div)
+                    console.log(1)
+                }else{
+                    category_div = document.getElementById(category_id)
+                    console.log(2)
+                }
+                
+
+                category_div.appendChild(master_div)
+            
         }
 
-        
-        const hex_code = generateRandomHex(8);
-        console.log( hex_code );
-        
-
-        function scrape(){
-            const description_el = document.getElementById('description');
-            const mkeywords_el = document.getElementById('mkeywords');
-            const okeywords_el = document.getElementById('okeywords');
-
-            
-            const description = description_el.value;
-            const mkeywords = mkeywords_el.value;
-            const okeywords = okeywords_el.value;
-
-            if (description == ""){
-                empty_reminder(description_el)
-            }
-
-            if (okeywords == ""){
-                empty_reminder(okeywords_el)
-            }
-
-            if (mkeywords == ""){
-                empty_reminder(mkeywords_el)
-            }
-
-
-            if (okeywords == "" || mkeywords == "" || description == ""){return}
-
-            //const hex_code = generateRandomHex(6)
-
-            fetch(`/dummy_scrape/${hex_code}`, {
-                method: 'POST',
-                body: JSON.stringify({description, mkeywords, okeywords}),
+        function get_contents(hex_code){
+            fetch(`/results/${hex_code}`, {
+                method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -159,29 +194,32 @@
             .then(response => response.json())
             .then(data => {
                 console.log(data)
+                
+                results_div = document.querySelector("#response-box");
+                Array.from(data).forEach(e => {
+                    add_data_to_DOM(e, results_div);
+                })
+                
             })
             .catch(error => {
                 console.error('Error:', error);
             });
-
-            setTimeout(() => {
-                window.location.href = window.location.href + `${hex_code}`
-            }, 1000);
-
         }
 
-        function empty_reminder(e){
-            e.classList.add("empty-alert")
-            e.setAttribute('onclick', 'remove_empty_alert(this)')
-            document.querySelector("#empty-reminder-text").classList.remove('d-none')
+        function scrape(hex_code){
+            fetch(`/scrape/${hex_code}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
         }
-
-        function remove_empty_alert(e){
-            e.classList.remove("empty-alert")
-            e.setAttribute('onclick', "")
-            document.querySelector("#empty-reminder-text").classList.add('d-none')
-        }
-
     </script>
 </head>
 <body>
@@ -198,21 +236,12 @@
         
         <section>
             <h1 class="text-center fw-bold mt-0 mt-lg-3">Literature manager</h1>
-        
-            <h3 class="fw-bold">Generate new review:</h3>
-                
+    
+    
 
-                    <div class="d-flex flex-column justify-content-center">
-                        <input id="mkeywords" class="form-control my-2 p-2" placeholder="Enter important keywords..."/>
-                        <input id="okeywords" class="form-control my-2 p-2" placeholder="Enter less important keywords..."/>
-                        <textarea id="description" class="form-control my-2 p-2" placeholder="Enter description..."></textarea>
-                        <div class="w-100 d-flex flex-column justify-content-end">
-                            <button class="btn btn-primary" onclick="scrape()">Generate</button>
-                        </div>
-                        <small id="empty-reminder-text" class="d-none text-danger">Make sure to fill out all fields</small>
+                    <div id="response-box" class="w-100">
+                        
                     </div>
-
-                    
         </section>
 
         
@@ -220,11 +249,25 @@
         
     </div>
     <script>
+        res = get_contents(hex_code);
+        console.log(res)
+
+        
+
         const socket = io('localhost:4321', {auth: 'frontend'});
 
         socket.on('connect', () => {
             console.log('Connected to server with ID:', socket.id);
         });
+        console.log(hex_code)
+
+        socket.on(`scrape_${hex_code}`, (data) => {
+            console.log(data)
+            result_div = document.querySelector('#response-box')
+            add_data_to_DOM(data['paper'], result_div)
+        });
+
+        
     </script>
 </body>
 </html>

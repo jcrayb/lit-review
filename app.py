@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect
+from flask import Flask, render_template, redirect, request
 from flask_cors import CORS
 import socketio
 import sqlite3
@@ -7,10 +7,8 @@ import random
 import pandas as pd
 import itertools
 
+import utils.db as db
 import utils
-
-connection = sqlite3.Connection('db.db')
-
 
 sio = socketio.Server(async_mode=None)
 app = Flask(__name__)
@@ -21,6 +19,11 @@ app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
 @app.route('/')
 def main():
     return render_template('main.html')
+
+@app.route('/<hex_code>')
+def results(hex_code):
+    return render_template('results.html')
+
 
 @app.route('/start')
 def start():
@@ -40,23 +43,55 @@ def connect(sid, environ, auth):
 def disconnect(sid):
     print(f'DISCONNECTED ${sid}')
 
-@app.route('/scrape')
-def scrape():
-    df = pd.DataFrame(columns=['name', 'year', 'authors', 'journal', 'categories', 'key ideas', 'link'])
-    keywords = {'optional': ['Energy storage', 'Multistage', 'SDDP', 'rolling horizon'],
-                'required': ['disaster']}
+@app.route('/query', methods=["POST"])
+def query():
+    json_data = request.get_json()
+    description = json_data['description']
+    keywords = json_data['keywords']
 
-    min_length = 3
+    if (not keywords) or (not description): return {'message': 'ERROR: empty fields'}
+    
+    return {'message': 'test'}
+
+@app.route('/results/<hex_code>', methods=["GET"])
+def get_results(hex_code):
+    
+    res = db.get_results(hex_code)
+    
+    return res
+
+@app.route('/dummy_scrape/<hex_code>', methods=["POST"])
+def dummy_scrape(hex_code):
+    print(hex_code)
+
+    papers = pd.read_csv('mess_relevance.csv').drop('Unnamed: 0', axis=1)
+    papers = papers.reindex(columns=['Name','Year','Authors','Journal', "Categories\n(e.g., SLO, ILO, Decision rule, etc.)", 'Relevance','Hyperlink', 'Key ideas',])
+
+    for i, r in enumerate(papers.iloc()):
+        print(i)
+        db.add_result(hex_code, [str(e) for e in r.to_list()[:-1]])
+        sio.emit(f'scrape_{hex_code}', {'paper': [hex_code] + [str(e) for e in r.to_list()[:-1]]})
+        time.sleep(1)
+    return {'message': 'SUCCESS'}
+
+
+@app.route('/scrape/<hex_code>', methods=["POST"])
+def scrape(hex_code):
+    data = request.get_json()
+    description = data['description']
+    mkeywords = data['mkeywords']
+    okeywords = data['okeywords']
+
+    df = pd.DataFrame(columns=['name', 'year', 'authors', 'journal', 'categories', 'link'])
+
     combinations = []
 
-    optional = keywords['optional']
-    for L in range(len(optional) + 1):
-        for subset in itertools.combinations(optional, L):
-            if len(subset) + len(keywords['required']) >= min_length:
-                combinations.append(tuple(keywords['required'] + [s for s in subset]))
+    for L in range(len(okeywords) + 1):
+        for subset in itertools.combinations(okeywords, L):
+                combinations.append(tuple(mkeywords + [s for s in subset]))
 
     for c in combinations:
-        articles = utils.scrape()
+        articles = utils.scrape(description)
 
         new_df = pd.DataFrame(columns=['name', 'year', 'authors', 'journal', 'categories', 'key ideas', 'link'], index=[i for i in range(len(articles)-1)])
 
@@ -81,10 +116,12 @@ def scrape():
 
                 print(title, authors, date, link)
 
-                new_row = pd.DataFrame(columns=['name', 'year', 'authors', 'journal', 'categories', 'key ideas', 'link'], index=[0])
+                new_row = pd.DataFrame(columns=['name', 'year', 'authors', 'journal', 'categories', 'link'], index=[0])
+                r = [title, date, authors, journal, query, link] 
+                db.add_result(hex_code, [str(e) for e in r])
+                sio.emit(f'scrape_{hex_code}', {'paper': [hex_code] + [str(e) for e in r]})
 
-                if date >= min_year:
-                    new_df.iloc[i] = [title, date, authors, journal, query, "", link] 
+                new_df.iloc[i] = [title, date, authors, journal, query, link] 
                 
                 #new_df = pd.concat(new_df, new_row)
             except:
@@ -93,8 +130,6 @@ def scrape():
 
         df = pd.concat([df, new_df])
         time.sleep(2)
-
-min_year = 2022
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=4321)
